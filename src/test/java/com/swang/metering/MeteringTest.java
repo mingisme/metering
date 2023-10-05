@@ -12,7 +12,7 @@ import org.apache.kafka.streams.kstream.Windowed;
 import org.apache.kafka.streams.processor.StateStore;
 import org.apache.kafka.streams.state.KeyValueIterator;
 import org.apache.kafka.streams.state.WindowStore;
-import org.apache.kafka.streams.test.TestRecord;
+//import org.apache.kafka.streams.test.TestRecord;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -35,13 +35,21 @@ public class MeteringTest {
         Deserializer<String> keyDeserializer = new Serdes.StringSerde().deserializer();
         Deserializer valueDeserializer = new JSONSerde().deserializer();
 
-
+// 2.2.2
 //        ConsumerRecordFactory factory = new ConsumerRecordFactory(keySerializer, valueSserializer);
+//        Report report = new Report("o1", "MQTT", System.currentTimeMillis()-5*1000, 1L, 100L);
 //        driver.pipeInput(factory.create(Metering.ORIGIN_REPORT, report.getReportKey(), report));
-//        driver.advanceWallClockTime(60*1000);
+//        driver.advanceWallClockTime(10*1000);
+//
+//        WindowStore windowStore = driver.getWindowStore(Metering.METERING_STORE);
+//        KeyValueIterator<Windowed<Object>, Object> all = windowStore.all();
+//        while (all.hasNext()) {
+//            System.out.println(all.next());
+//        }
 //        ProducerRecord<String, Report> record1 = driver.readOutput(Metering.PERIODICAL_REPORT, keyDeserializer, valueDeserializer);
 //        System.out.println(record1);
 
+// 3.5.0
         TestInputTopic inputTopic = driver.createInputTopic(Metering.ORIGIN_REPORT, keySerializer, valueSserializer);
 
         Report report = new Report("o1", "MQTT", System.currentTimeMillis(), 1L, 100L);
