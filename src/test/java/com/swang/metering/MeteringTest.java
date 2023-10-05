@@ -46,9 +46,8 @@ public class MeteringTest {
 
         Report report = new Report("o1", "MQTT", System.currentTimeMillis(), 1L, 100L);
         inputTopic.pipeInput(report.getReportKey(), report);
-        driver.advanceWallClockTime(Duration.ofSeconds(100));
+        driver.advanceWallClockTime(Duration.ofSeconds(10));
 
-//        Thread.sleep(10000);
         WindowStore windowStore = driver.getTimestampedWindowStore(Metering.METERING_STORE);
         KeyValueIterator<Windowed<Object>, Object> all = windowStore.all();
         while (all.hasNext()) {

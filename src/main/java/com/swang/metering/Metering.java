@@ -38,7 +38,7 @@ public class Metering {
 
 
     public static final int MSG_SIZE = 512;
-    public static final Duration REPORT_FREQUENCY = Duration.ofSeconds(1);
+    public static final Duration REPORT_FREQUENCY = Duration.ofSeconds(5);
     public static final String ORIGIN_REPORT = "origin-report";
     public static final String PERIODICAL_REPORT = "periodical-report";
     public static final String METERING_STORE = "metering-store";
@@ -74,7 +74,6 @@ public class Metering {
         props.put(StreamsConfig.APPLICATION_ID_CONFIG, "metering");
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "kafka9002:9092,kafka9003:9092");
         props.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG, JsonTimestampExtractor.class);
-//        props.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, 1000L);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         return props;
     }
@@ -105,19 +104,12 @@ public class Metering {
 
         KTable<Windowed<String>, Report> suppressedReports = aggregatedReports.suppress(Suppressed.untilWindowCloses(unbounded()));
 
-        suppressedReports.toStream().print(Printed.<Windowed<String>, Report>toSysOut().withLabel("suppress"));
-
         KStream<String, Report> periodicalReports = suppressedReports.toStream().map((key, value) -> {
             value.setTimestamp(System.currentTimeMillis());
             return new KeyValue<>(key.key(), value);
         });
 
         periodicalReports.to(PERIODICAL_REPORT, Produced.with(new Serdes.StringSerde(),new JSONSerde<>()));
-
-//        suppressedReports.toStream().to(PERIODICAL_REPORT);
-
-
-
 
         return builder.build();
     }
