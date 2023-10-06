@@ -42,7 +42,7 @@ public class MeteringTest {
 //        System.out.println(record1);
 
 // 3.5.0
-        TestInputTopic inputTopic = driver.createInputTopic(Metering.ORIGIN_REPORT, keySerializer, valueSserializer);
+        TestInputTopic inputTopic = driver.createInputTopic(Metering.IOT_METERING, keySerializer, valueSserializer);
         TestOutputTopic outputTopic = driver.createOutputTopic(Metering.PERIODICAL_REPORT, keyDeserializer, valueDeserializer);
         for (int i = 0; i < 10; i++) {
             Report report = new Report("o1", "MQTT", System.currentTimeMillis(), 1L, 100L);
@@ -50,7 +50,7 @@ public class MeteringTest {
             driver.advanceWallClockTime(Duration.ofSeconds(10));
         }
 
-        WindowStore windowStore = driver.getTimestampedWindowStore(Metering.METERING_STORE);
+        WindowStore windowStore = driver.getTimestampedWindowStore(Metering.IOT_WINDOW_STORE);
         KeyValueIterator<Windowed<Object>, Object> all = windowStore.all();
         while (all.hasNext()) {
             System.out.println(all.next());

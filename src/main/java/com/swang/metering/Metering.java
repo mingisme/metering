@@ -1,21 +1,7 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package com.swang.metering;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
@@ -26,6 +12,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 
@@ -36,12 +25,21 @@ public class Metering {
 
     final static Logger logger = LoggerFactory.getLogger(Metering.class);
 
-
     public static final int MSG_SIZE = 512;
-    public static final Duration REPORT_FREQUENCY = Duration.ofSeconds(1);
-    public static final String ORIGIN_REPORT = "origin-report";
+
+    public static final Duration REPORT_FREQUENCY = Duration.ofSeconds(60);
+
+    public static final long UPPER_BOUND_UNIT_TIME_MS = REPORT_FREQUENCY.getSeconds() * 1000;
+
+    public static final int PRODUCT_ID = 1102;
+
+    public static final String IOT_METERING = "iot-metering-stream-input";
     public static final String PERIODICAL_REPORT = "periodical-report";
-    public static final String METERING_STORE = "metering-store";
+    public static final String IOT_WINDOW_STORE = "agg-window-store";
+    public static final String SUPPRESS_WINDOW_STORE = "sup-window";
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
 
 
     public static void main(String[] args) throws Exception {
@@ -71,7 +69,7 @@ public class Metering {
 
     protected Properties getProperties() {
         Properties props = new Properties();
-        props.put(StreamsConfig.APPLICATION_ID_CONFIG, "metering");
+        props.put(StreamsConfig.APPLICATION_ID_CONFIG, "iot-sum-metering");
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "kafka9002:9092,kafka9003:9092");
         props.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG, JsonTimestampExtractor.class);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
@@ -81,35 +79,55 @@ public class Metering {
     protected Topology getSumTopology() {
         final StreamsBuilder builder = new StreamsBuilder();
 
-        KStream<String, Report> reports = builder.stream(ORIGIN_REPORT, Consumed.with(new Serdes.StringSerde(),new JSONSerde<>()));
+        KStream<String, Report> reports = builder.stream(IOT_METERING, Consumed.with(new Serdes.StringSerde(), new JSONSerde<>()));
 
         KStream<String, Report> fixedReports = reports.mapValues(value -> {
             long numberByByte = (value.getBytes() + MSG_SIZE - 1) / MSG_SIZE;
-            if (numberByByte > value.getNumber()) {
-                value.setNumber(numberByByte);
-            }
+            value.setNumber(Math.max(value.getNumber(), numberByByte));
             return value;
         });
 
         KGroupedStream<String, Report> groupedReports = fixedReports.groupByKey();
 
         TimeWindowedKStream<String, Report> windowedReports =
-                groupedReports.windowedBy(TimeWindows.of(REPORT_FREQUENCY).grace(REPORT_FREQUENCY.dividedBy(5)));
+                groupedReports.windowedBy(TimeWindows.ofSizeWithNoGrace(REPORT_FREQUENCY));
 
-        KTable<Windowed<String>, Report> aggregatedReports = windowedReports.reduce((value1, value2) -> {
-            value1.setNumber(value1.getNumber() + value2.getNumber());
-            return value1;
-        },  Materialized.<String, Report, WindowStore<Bytes, byte[]>>as(METERING_STORE)
+        KTable<Windowed<String>, Report> aggregatedReports = windowedReports.aggregate(Report::new, (key, value, report) -> {
+            report.setOrgId(value.getOrgId());
+            report.setObject(value.getObject());
+            report.setTimestamp(value.getTimestamp());
+            report.setNumber(report.getNumber() + value.getNumber());
+            report.setBytes(report.getBytes() + value.getBytes());
+            return report;
+        }, Materialized.<String, Report, WindowStore<Bytes, byte[]>>as(IOT_WINDOW_STORE)
                 .withKeySerde(new Serdes.StringSerde()).withValueSerde(new JSONSerde<>()));
 
-        KTable<Windowed<String>, Report> suppressedReports = aggregatedReports.suppress(Suppressed.untilWindowCloses(unbounded()));
+        KTable<Windowed<String>, Report> suppressedReports = aggregatedReports.suppress(Suppressed.untilWindowCloses(unbounded()).withName(SUPPRESS_WINDOW_STORE));
 
-        KStream<String, Report> periodicalReports = suppressedReports.toStream().map((key, value) -> {
-            value.setTimestamp(System.currentTimeMillis());
-            return new KeyValue<>(key.key(), value);
+        KStream<byte[], String> periodicalReports = suppressedReports.toStream().map((key, value) -> {
+
+            logger.info("window report: {}", value);
+
+            InstanceDTO instanceDTO = new InstanceDTO();
+            instanceDTO.setPropertyName(value.getObject());
+            instanceDTO.setOuId(value.getOrgId());
+            instanceDTO.setUsage(value.getNumber()*1.0);
+
+            ReportDTO reportDTO = new ReportDTO();
+            reportDTO.setProductId(PRODUCT_ID);
+            reportDTO.setReportList(new ArrayList<>(Collections.singletonList(instanceDTO)));
+            reportDTO.setStatisticTime(new Date(value.getTimestamp() / UPPER_BOUND_UNIT_TIME_MS * UPPER_BOUND_UNIT_TIME_MS));
+
+            try {
+                String reportDTOStr = OBJECT_MAPPER.writer().writeValueAsString(Collections.singletonList(reportDTO));
+                return new KeyValue<>(null, reportDTOStr);
+            } catch (JsonProcessingException e) {
+                logger.error("fail to convert reportDTO", e);
+                return new KeyValue<>(null, null);
+            }
         });
 
-        periodicalReports.to(PERIODICAL_REPORT, Produced.with(new Serdes.StringSerde(),new JSONSerde<>()));
+        periodicalReports.to(PERIODICAL_REPORT, Produced.with(new Serdes.ByteArraySerde(), new Serdes.StringSerde()));
 
         return builder.build();
     }
