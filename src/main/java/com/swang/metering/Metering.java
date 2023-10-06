@@ -38,7 +38,7 @@ public class Metering {
 
 
     public static final int MSG_SIZE = 512;
-    public static final Duration REPORT_FREQUENCY = Duration.ofSeconds(5);
+    public static final Duration REPORT_FREQUENCY = Duration.ofSeconds(1);
     public static final String ORIGIN_REPORT = "origin-report";
     public static final String PERIODICAL_REPORT = "periodical-report";
     public static final String METERING_STORE = "metering-store";

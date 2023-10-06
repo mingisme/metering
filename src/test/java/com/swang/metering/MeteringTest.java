@@ -1,24 +1,16 @@
 package com.swang.metering;
 
 
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.metrics.stats.Meter;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.streams.*;
-//import org.apache.kafka.streams.test.ConsumerRecordFactory;
 import org.apache.kafka.streams.kstream.Windowed;
-import org.apache.kafka.streams.processor.StateStore;
 import org.apache.kafka.streams.state.KeyValueIterator;
 import org.apache.kafka.streams.state.WindowStore;
-//import org.apache.kafka.streams.test.TestRecord;
-import org.junit.Assert;
 import org.junit.Test;
 
 import java.time.Duration;
-import java.time.Instant;
-import java.time.temporal.TemporalUnit;
 import java.util.Properties;
 
 
@@ -51,10 +43,12 @@ public class MeteringTest {
 
 // 3.5.0
         TestInputTopic inputTopic = driver.createInputTopic(Metering.ORIGIN_REPORT, keySerializer, valueSserializer);
-
-        Report report = new Report("o1", "MQTT", System.currentTimeMillis(), 1L, 100L);
-        inputTopic.pipeInput(report.getReportKey(), report);
-        driver.advanceWallClockTime(Duration.ofSeconds(10));
+        TestOutputTopic outputTopic = driver.createOutputTopic(Metering.PERIODICAL_REPORT, keyDeserializer, valueDeserializer);
+        for (int i = 0; i < 10; i++) {
+            Report report = new Report("o1", "MQTT", System.currentTimeMillis(), 1L, 100L);
+            inputTopic.pipeInput(report.getReportKey(), report);
+            driver.advanceWallClockTime(Duration.ofSeconds(10));
+        }
 
         WindowStore windowStore = driver.getTimestampedWindowStore(Metering.METERING_STORE);
         KeyValueIterator<Windowed<Object>, Object> all = windowStore.all();
@@ -62,12 +56,11 @@ public class MeteringTest {
             System.out.println(all.next());
         }
 
-        TestOutputTopic outputTopic = driver.createOutputTopic(Metering.PERIODICAL_REPORT, keyDeserializer, valueDeserializer);
-
         while (!outputTopic.isEmpty()) {
             KeyValue keyValue = outputTopic.readKeyValue();
             System.out.println(keyValue);
         }
+
 
         driver.close();
     }
