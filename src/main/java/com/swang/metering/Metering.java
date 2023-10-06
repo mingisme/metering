@@ -7,6 +7,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.*;
 import org.apache.kafka.streams.kstream.*;
+import org.apache.kafka.streams.processor.WallclockTimestampExtractor;
 import org.apache.kafka.streams.state.WindowStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,21 +27,14 @@ public class Metering {
     final static Logger logger = LoggerFactory.getLogger(Metering.class);
 
     public static final int MSG_SIZE = 512;
-
-    public static final Duration REPORT_FREQUENCY = Duration.ofSeconds(60);
-
+    public static final Duration REPORT_FREQUENCY = Duration.ofSeconds(3);
     public static final long UPPER_BOUND_UNIT_TIME_MS = REPORT_FREQUENCY.getSeconds() * 1000;
-
     public static final int PRODUCT_ID = 1102;
-
     public static final String IOT_METERING = "iot-metering-stream-input";
     public static final String PERIODICAL_REPORT = "periodical-report";
     public static final String IOT_WINDOW_STORE = "agg-window-store";
     public static final String SUPPRESS_WINDOW_STORE = "sup-window";
-
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
-
 
     public static void main(String[] args) throws Exception {
 
@@ -71,8 +65,8 @@ public class Metering {
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG, "iot-sum-metering");
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "kafka9002:9092,kafka9003:9092");
-        props.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG, JsonTimestampExtractor.class);
-        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+        props.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG, WallclockTimestampExtractor.class);
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         return props;
     }
 
@@ -82,8 +76,9 @@ public class Metering {
         KStream<String, Report> reports = builder.stream(IOT_METERING, Consumed.with(new Serdes.StringSerde(), new JSONSerde<>()));
 
         KStream<String, Report> fixedReports = reports.mapValues(value -> {
-            long numberByByte = (value.getBytes() + MSG_SIZE - 1) / MSG_SIZE;
-            value.setNumber(Math.max(value.getNumber(), numberByByte));
+            logger.debug("message input: {}", value);
+            long numberByByte = (value.getBytesNumber() + MSG_SIZE - 1) / MSG_SIZE;
+            value.setRecordNumber(Math.max(value.getRecordNumber(), numberByByte));
             return value;
         });
 
@@ -94,32 +89,34 @@ public class Metering {
 
         KTable<Windowed<String>, Report> aggregatedReports = windowedReports.aggregate(Report::new, (key, value, report) -> {
             report.setOrgId(value.getOrgId());
-            report.setObject(value.getObject());
+            report.setProject(value.getProject());
             report.setTimestamp(value.getTimestamp());
-            report.setNumber(report.getNumber() + value.getNumber());
-            report.setBytes(report.getBytes() + value.getBytes());
+            report.setRecordNumber(report.getRecordNumber() + value.getRecordNumber());
+            report.setBytesNumber(report.getBytesNumber() + value.getBytesNumber());
             return report;
         }, Materialized.<String, Report, WindowStore<Bytes, byte[]>>as(IOT_WINDOW_STORE)
                 .withKeySerde(new Serdes.StringSerde()).withValueSerde(new JSONSerde<>()));
 
-        KTable<Windowed<String>, Report> suppressedReports = aggregatedReports.suppress(Suppressed.untilWindowCloses(unbounded()).withName(SUPPRESS_WINDOW_STORE));
+        KTable<Windowed<String>, Report> suppressedReports =
+                aggregatedReports.suppress(Suppressed.untilWindowCloses(unbounded()).withName(SUPPRESS_WINDOW_STORE));
 
         KStream<byte[], String> periodicalReports = suppressedReports.toStream().map((key, value) -> {
 
-            logger.info("window report: {}", value);
+
 
             InstanceDTO instanceDTO = new InstanceDTO();
-            instanceDTO.setPropertyName(value.getObject());
+            instanceDTO.setPropertyName(value.getProject());
             instanceDTO.setOuId(value.getOrgId());
-            instanceDTO.setUsage(value.getNumber()*1.0);
+            instanceDTO.setUsage(value.getRecordNumber() * 1.0);
 
             ReportDTO reportDTO = new ReportDTO();
             reportDTO.setProductId(PRODUCT_ID);
             reportDTO.setReportList(new ArrayList<>(Collections.singletonList(instanceDTO)));
-            reportDTO.setStatisticTime(new Date(value.getTimestamp() / UPPER_BOUND_UNIT_TIME_MS * UPPER_BOUND_UNIT_TIME_MS));
+            reportDTO.setStatisticTime(new Date(System.currentTimeMillis() / UPPER_BOUND_UNIT_TIME_MS * UPPER_BOUND_UNIT_TIME_MS));
 
             try {
                 String reportDTOStr = OBJECT_MAPPER.writer().writeValueAsString(Collections.singletonList(reportDTO));
+                logger.debug("message output: {}", value);
                 return new KeyValue<>(null, reportDTOStr);
             } catch (JsonProcessingException e) {
                 logger.error("fail to convert reportDTO", e);

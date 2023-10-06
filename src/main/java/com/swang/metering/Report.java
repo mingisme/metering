@@ -2,24 +2,24 @@ package com.swang.metering;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
-public class Report implements JSONSerdeCompatible{
+public class Report implements JSONSerdeCompatible {
 
     private String orgId;
-    private String object;
+    private String project;
 
     public Long timestamp;
-    private long number;
-    private long bytes;
+    private long recordNumber;
+    private long bytesNumber;
 
     public Report() {
     }
 
-    public Report(String orgId, String object, Long timestamp, long number, long bytes) {
+    public Report(String orgId, String project, Long timestamp, long recordNumber, long bytesNumber) {
         this.orgId = orgId;
-        this.object = object;
+        this.project = project;
         this.timestamp = timestamp;
-        this.number = number;
-        this.bytes = bytes;
+        this.recordNumber = recordNumber;
+        this.bytesNumber = bytesNumber;
     }
 
     public String getOrgId() {
@@ -30,12 +30,12 @@ public class Report implements JSONSerdeCompatible{
         this.orgId = orgId;
     }
 
-    public String getObject() {
-        return object;
+    public String getProject() {
+        return project;
     }
 
-    public void setObject(String object) {
-        this.object = object;
+    public void setProject(String project) {
+        this.project = project;
     }
 
     public Long getTimestamp() {
@@ -46,35 +46,35 @@ public class Report implements JSONSerdeCompatible{
         this.timestamp = timestamp;
     }
 
-    public long getNumber() {
-        return number;
+    public long getRecordNumber() {
+        return recordNumber;
     }
 
-    public void setNumber(long number) {
-        this.number = number;
+    public void setRecordNumber(long recordNumber) {
+        this.recordNumber = recordNumber;
     }
 
-    public long getBytes() {
-        return bytes;
+    public long getBytesNumber() {
+        return bytesNumber;
     }
 
-    public void setBytes(long bytes) {
-        this.bytes = bytes;
+    public void setBytesNumber(long bytesNumber) {
+        this.bytesNumber = bytesNumber;
     }
 
     @JsonIgnore
     public String getReportKey() {
-        return orgId + "__" + object;
+        return orgId + "__" + project;
     }
 
     @Override
     public String toString() {
         return "Report{" +
                 "orgId='" + orgId + '\'' +
-                ", object='" + object + '\'' +
+                ", project='" + project + '\'' +
                 ", timestamp=" + timestamp +
-                ", number=" + number +
-                ", bytes=" + bytes +
+                ", recordNumber=" + recordNumber +
+                ", bytesNumber=" + bytesNumber +
                 '}';
     }
 }
