@@ -1,6 +1,6 @@
 package com.swang.metering;
 
-public class InstanceDTO {
+public class InstanceDTO implements JSONSerdeCompatible{
     private String ouId;
     private String instanceId;
     private String propertyName;
@@ -45,5 +45,14 @@ public class InstanceDTO {
 
     public void setQuota(Double quota) {
         this.quota = quota;
+    }
+
+    @Override
+    public String toString() {
+        return "InstanceDTO{" +
+                "ouId='" + ouId + '\'' +
+                ", propertyName='" + propertyName + '\'' +
+                ", usage=" + usage +
+                '}';
     }
 }

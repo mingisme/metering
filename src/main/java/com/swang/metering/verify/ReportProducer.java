@@ -21,8 +21,8 @@ public class ReportProducer {
 
         KafkaProducer<String, Report> producer = new KafkaProducer<>(kafkaProps);
 
-        for (int i = 0; i < 50; i++) {
-            Report report = new Report("o1", "Messages(Old)", System.currentTimeMillis(), 1L, 512L);
+        for (int i = 0; i < 10000; i++) {
+            Report report = new Report("orgId-"+i%2, "Messages(Old)", System.currentTimeMillis(), 1L, 512L);
             ProducerRecord<String, Report> record = new ProducerRecord<>(Metering.IOT_METERING, report.getReportKey(), report);
             Future<RecordMetadata> producerFuture = producer.send(record);
             RecordMetadata recordMetadata = producerFuture.get();

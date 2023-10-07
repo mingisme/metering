@@ -3,7 +3,7 @@ package com.swang.metering;
 import java.util.ArrayList;
 import java.util.Date;
 
-public class ReportDTO {
+public class ReportDTO implements JSONSerdeCompatible{
     private Integer productId;
     private Integer suitId;
     private Date statisticTime;
