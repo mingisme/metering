@@ -40,4 +40,13 @@ public class ReportDTO implements JSONSerdeCompatible{
     public void setReportList(ArrayList<InstanceDTO> reportList) {
         this.reportList = reportList;
     }
+
+    @Override
+    public String toString() {
+        return "ReportDTO{" +
+                "productId=" + productId +
+                ", statisticTime=" + statisticTime +
+                ", reportList=" + reportList +
+                '}';
+    }
 }

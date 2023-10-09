@@ -12,6 +12,7 @@ import org.apache.kafka.streams.state.WindowStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.text.SimpleDateFormat;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
@@ -66,7 +67,7 @@ public class Metering {
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG, "iot-sum-metering");
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "kafka9002:9092,kafka9003:9092");
-        props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
+        props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.StringSerde.class);
         props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, JSONSerde.class);
         props.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG, JsonTimestampExtractor.class);
         props.put(StreamsConfig.NUM_STREAM_THREADS_CONFIG,8);
@@ -80,13 +81,13 @@ public class Metering {
         KStream<String, Report> reports = builder.stream(IOT_METERING, Consumed.with(new Serdes.StringSerde(), new JSONSerde<>()));
 
         reports.mapValues(value -> {
-                    logger.debug("message input: {}", value);
+                    logger.trace("message input: {}", value);
                     long numberByByte = (value.getBytesNumber() + MSG_SIZE - 1) / MSG_SIZE;
                     value.setRecordNumber(Math.max(value.getRecordNumber(), numberByByte));
                     return value;
                 })
                 .groupByKey()
-                .windowedBy(TimeWindows.ofSizeAndGrace(REPORT_FREQUENCY,REPORT_FREQUENCY.dividedBy(2)))
+                .windowedBy(TimeWindows.ofSizeAndGrace(REPORT_FREQUENCY,REPORT_FREQUENCY.dividedBy(5)))
                 .aggregate(Report::new, (key, value, report) -> {
                     report.setOrgId(value.getOrgId());
                     report.setProject(value.getProject());
@@ -98,7 +99,6 @@ public class Metering {
                         .withKeySerde(new Serdes.StringSerde()).withValueSerde(new JSONSerde<>()))
                 .suppress(Suppressed.untilWindowCloses(unbounded()).withName(SUPPRESS_WINDOW))
                 .toStream().map((key, value) -> {
-
                     InstanceDTO instanceDTO = new InstanceDTO();
                     instanceDTO.setPropertyName(value.getProject());
                     instanceDTO.setOuId(value.getOrgId());
@@ -107,14 +107,16 @@ public class Metering {
                     ReportDTO reportDTO = new ReportDTO();
                     reportDTO.setProductId(PRODUCT_ID);
                     reportDTO.setReportList(new ArrayList<>(Collections.singletonList(instanceDTO)));
-                    reportDTO.setStatisticTime(new Date(System.currentTimeMillis() / UPPER_BOUND_UNIT_TIME_MS * UPPER_BOUND_UNIT_TIME_MS));
+                    reportDTO.setStatisticTime(Date.from(key.window().endTime()));
 
-                    String newKey = String.format("%s__%s", reportDTO.getProductId(), reportDTO.getStatisticTime().getTime());
-                    logger.debug("aggregated message: {}, {}", reportDTO.getStatisticTime().getTime(), reportDTO.getReportList().get(0));
+                    String newKey = String.format("%s", reportDTO.getStatisticTime().getTime());
+                    logger.trace("aggregated message: {}, {}",
+                            newKey,
+                            instanceDTO);
                     return new KeyValue<>(newKey, reportDTO);
                 })
                 .groupByKey()
-                .windowedBy(TimeWindows.ofSizeWithNoGrace(REPORT_FREQUENCY.multipliedBy(5)))
+                .windowedBy(TimeWindows.ofSizeAndGrace(REPORT_FREQUENCY,REPORT_FREQUENCY.dividedBy(2)))
                 .reduce((value1, value2) -> {
                     value2.getReportList().addAll(value1.getReportList());
                     return value2;
