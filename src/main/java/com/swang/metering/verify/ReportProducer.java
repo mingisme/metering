@@ -27,7 +27,7 @@ public class ReportProducer {
             Future<RecordMetadata> producerFuture = producer.send(record);
             RecordMetadata recordMetadata = producerFuture.get();
             System.out.println(i + ":" + recordMetadata);
-            Thread.sleep(1000);
+            Thread.sleep(5);
         }
 
 //        Thread.sleep(62000);

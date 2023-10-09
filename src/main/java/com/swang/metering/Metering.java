@@ -25,7 +25,7 @@ public class Metering {
     final static Logger logger = LoggerFactory.getLogger(Metering.class);
 
     public static final int MSG_SIZE = 512;
-    public static final Duration REPORT_FREQUENCY = Duration.ofSeconds(10);
+    public static final Duration REPORT_FREQUENCY = Duration.ofSeconds(3);
     public static final long UPPER_BOUND_UNIT_TIME_MS = REPORT_FREQUENCY.getSeconds() * 1000;
     public static final int PRODUCT_ID = 1102;
     public static final String IOT_METERING = "iot-metering-stream-input";
@@ -35,6 +35,9 @@ public class Metering {
 
     public static final String IOT_RPT_WINDOW_STORE = "iot-rpt-window-store";
     public static final String SUP_RPT_WINDOW = "sup-rpt-window";
+
+    public static final int NUM_STREAM_THREAD = 8;
+    public static final int GRACE_MULTIPLY_FACTOR = 10;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -70,7 +73,7 @@ public class Metering {
         props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.StringSerde.class);
         props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, JSONSerde.class);
         props.put(StreamsConfig.DEFAULT_TIMESTAMP_EXTRACTOR_CLASS_CONFIG, JsonTimestampExtractor.class);
-        props.put(StreamsConfig.NUM_STREAM_THREADS_CONFIG,8);
+        props.put(StreamsConfig.NUM_STREAM_THREADS_CONFIG, NUM_STREAM_THREAD);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         return props;
     }
@@ -87,14 +90,11 @@ public class Metering {
                     return value;
                 })
                 .groupByKey()
-                .windowedBy(TimeWindows.ofSizeAndGrace(REPORT_FREQUENCY,REPORT_FREQUENCY.dividedBy(5)))
-                .aggregate(Report::new, (key, value, report) -> {
-                    report.setOrgId(value.getOrgId());
-                    report.setProject(value.getProject());
-                    report.setTimestamp(value.getTimestamp());
-                    report.setRecordNumber(report.getRecordNumber() + value.getRecordNumber());
-                    report.setBytesNumber(report.getBytesNumber() + value.getBytesNumber());
-                    return report;
+                .windowedBy(TimeWindows.ofSizeWithNoGrace(REPORT_FREQUENCY))
+                .reduce((value1, value2) -> {
+                    value2.setRecordNumber(value1.getRecordNumber() + value2.getRecordNumber());
+                    value2.setBytesNumber(value1.getBytesNumber() + value2.getBytesNumber());
+                    return value2;
                 }, Materialized.<String, Report, WindowStore<Bytes, byte[]>>as(IOT_WINDOW_STORE)
                         .withKeySerde(new Serdes.StringSerde()).withValueSerde(new JSONSerde<>()))
                 .suppress(Suppressed.untilWindowCloses(unbounded()).withName(SUPPRESS_WINDOW))
@@ -116,7 +116,7 @@ public class Metering {
                     return new KeyValue<>(newKey, reportDTO);
                 })
                 .groupByKey()
-                .windowedBy(TimeWindows.ofSizeAndGrace(REPORT_FREQUENCY,REPORT_FREQUENCY.dividedBy(2)))
+                .windowedBy(TimeWindows.ofSizeAndGrace(REPORT_FREQUENCY, REPORT_FREQUENCY.multipliedBy(GRACE_MULTIPLY_FACTOR)))
                 .reduce((value1, value2) -> {
                     value2.getReportList().addAll(value1.getReportList());
                     return value2;
